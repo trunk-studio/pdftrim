@@ -1,0 +1,68 @@
+#!/usr/bin/env groovy
+@Grab('org.apache.pdfbox:pdfbox:1.8.11')
+import org.apache.pdfbox.cos.COSArray
+import org.apache.pdfbox.cos.COSString
+import org.apache.pdfbox.pdfparser.PDFStreamParser
+import org.apache.pdfbox.pdfwriter.ContentStreamWriter
+import org.apache.pdfbox.pdmodel.PDDocument
+import org.apache.pdfbox.pdmodel.PDPage
+import org.apache.pdfbox.pdmodel.common.PDStream
+import org.apache.pdfbox.util.PDFOperator
+
+/**
+ * Remove the ugly texts in PDFs
+ * by Kyle
+ */
+
+def doc = PDDocument.load(args[0])
+
+def pageN = 0
+
+doc.documentCatalog.allPages.each { PDPage page ->
+
+    def parser = new PDFStreamParser(page.contents)
+    parser.parse()
+    def j = 0
+    def flags = []
+    parser.tokens.each { token ->
+        if (token instanceof PDFOperator) {
+            PDFOperator op = (PDFOperator) token;
+
+            if (op.operation == 'TJ') {
+                (COSArray) parser.tokens.get(j - 1).each { prev ->
+                    if (prev instanceof COSString) {
+                        COSString str = (COSString) prev;
+                        if (str.string.contains('www.it-ebooks.info')) {
+                            println "TJ " + str
+                        }
+                    }
+                }
+            } else if (op.operation == 'Tj') {
+                COSString str = (COSString) parser.tokens.get(j - 1)
+                if (str.string.contains('www.it-ebooks.info')) {
+                    println "Tj " + str
+                    //flags << (j - 33)
+                    flags << j
+                }
+            }
+        }
+        j++
+    }
+
+    List tokens = []
+
+    for (int i = 0; i < parser.tokens.size(); i++) {
+        if (!flags.contains(i)) {
+            tokens << parser.tokens[i]
+        }
+    }
+
+    def newContents = new PDStream(doc)
+    def writer = new ContentStreamWriter(newContents.createOutputStream())
+    writer.writeTokens(tokens)
+    newContents.addCompression()
+    page.setContents(newContents)
+}
+
+doc?.save(args[1])
+doc?.close()
